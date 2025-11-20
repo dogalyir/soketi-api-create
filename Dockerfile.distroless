@@ -1,0 +1,40 @@
+# Multi-stage build for ultra-minimal production
+FROM oven/bun:alpine AS builder
+
+WORKDIR /app
+
+# Copy package files and source code
+COPY package.json bun.lock tsconfig.json ./
+COPY src ./src
+
+# Install dependencies and build
+RUN bun install --production --frozen-lockfile && \
+    bun build \
+        --compile \
+        --minify-whitespace \
+        --minify-syntax \
+        --target bun-linux-x64-musl \
+        --outfile server \
+        src/index.ts
+
+# Production stage - Distroless for ultimate minimalism
+FROM gcr.io/distroless/static:nonroot
+
+WORKDIR /app
+
+# Copy the compiled binary from builder
+COPY --from=builder --chown=nonroot:nonroot /app/server ./
+
+# Switch to non-root user (already nonroot in distroless)
+USER nonroot
+
+# Expose port
+EXPOSE 3000
+
+# Environment variables
+ENV NODE_ENV=production
+ENV PORT=3000
+
+# Note: No health check in distroless (no shell available)
+# Start the application
+CMD ["./server"]
