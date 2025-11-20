@@ -20,8 +20,8 @@ RUN bun install --production --frozen-lockfile && \
 # Production stage - Alpine minimal
 FROM alpine:3.19
 
-# Install minimal runtime dependencies and create user in single RUN
-RUN apk add --no-cache ca-certificates libc6-compat wget && \
+# Install runtime dependencies
+RUN apk add --no-cache ca-certificates libc6-compat wget libstdc++ libgcc && \
     update-ca-certificates && \
     addgroup -g 1001 -S app && \
     adduser -u 1001 -S app -G app
