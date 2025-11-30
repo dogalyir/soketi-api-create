@@ -1,117 +1,86 @@
-import { sql } from 'bun'
-import { SoketiApp } from './schema'
+/**
+ * Repositorio de `apps` usando Drizzle ORM (sin 'as' assertions).
+ *
+ * - Se usan anotaciones de tipo explícitas en las variables que reciben
+ *   resultados de las consultas.
+ * - Se maneja `unknown` en captura de errores y se extraen mensajes de forma segura.
+ *
+ * Requisitos:
+ * - `src/db/drizzleClient.ts` debe exportar `db` (instancia de Drizzle).
+ * - `src/db/tables.ts` debe exportar `apps`, `SoketiApp` y `NewSoketiApp`.
+ */
 
-// Database repository for Soketi apps
-export class SoketiAppRepository {
+import db from './drizzleClient'
+import { apps, SoketiApp, NewSoketiApp } from './tables'
+import { eq } from 'drizzle-orm'
 
-  // Create a new Soketi app with proper Soketi schema
-  static async createApp(appData: {
-    id: string
-    key: string
-    secret: string
-    max_connections: number
-    enable_client_messages: number
-    enabled: number
-    max_backend_events_per_sec: number
-    max_client_events_per_sec: number
-    max_read_req_per_sec: number
-    max_presence_members_per_channel: number | null
-    max_presence_member_size_in_kb: number | null
-    max_channel_name_length: number | null
-    max_event_channels_at_once: number | null
-    max_event_name_length: number | null
-    max_event_payload_in_kb: number | null
-    max_event_batch_size: number | null
-    webhooks: string | null
-    enable_user_authentication: number
-  }): Promise<SoketiApp> {
-    const result = await sql`
-      INSERT INTO apps (
-        id, "key", secret, max_connections, enable_client_messages, "enabled",
-        max_backend_events_per_sec, max_client_events_per_sec, max_read_req_per_sec,
-        max_presence_members_per_channel, max_presence_member_size_in_kb,
-        max_channel_name_length, max_event_channels_at_once, max_event_name_length,
-        max_event_payload_in_kb, max_event_batch_size, webhooks, enable_user_authentication
-      ) VALUES (
-        ${appData.id}, ${appData.key}, ${appData.secret}, ${appData.max_connections},
-        ${appData.enable_client_messages}, ${appData.enabled},
-        ${appData.max_backend_events_per_sec}, ${appData.max_client_events_per_sec},
-        ${appData.max_read_req_per_sec}, ${appData.max_presence_members_per_channel},
-        ${appData.max_presence_member_size_in_kb}, ${appData.max_channel_name_length},
-        ${appData.max_event_channels_at_once}, ${appData.max_event_name_length},
-        ${appData.max_event_payload_in_kb}, ${appData.max_event_batch_size},
-        ${appData.webhooks}, ${appData.enable_user_authentication}
-      ) RETURNING *
-    `
-
-    if (result.length === 0) {
-      throw new Error('Failed to create Soketi app')
-    }
-
-    const app: SoketiApp = {
-      id: result[0].id,
-      key: result[0].key,
-      secret: result[0].secret,
-      max_connections: result[0].max_connections,
-      enable_client_messages: result[0].enable_client_messages,
-      enabled: result[0].enabled,
-      max_backend_events_per_sec: result[0].max_backend_events_per_sec,
-      max_client_events_per_sec: result[0].max_client_events_per_sec,
-      max_read_req_per_sec: result[0].max_read_req_per_sec,
-      max_presence_members_per_channel: result[0].max_presence_members_per_channel,
-      max_presence_member_size_in_kb: result[0].max_presence_member_size_in_kb,
-      max_channel_name_length: result[0].max_channel_name_length,
-      max_event_channels_at_once: result[0].max_event_channels_at_once,
-      max_event_name_length: result[0].max_event_name_length,
-      max_event_payload_in_kb: result[0].max_event_payload_in_kb,
-      max_event_batch_size: result[0].max_event_batch_size,
-      webhooks: result[0].webhooks,
-      enable_user_authentication: result[0].enable_user_authentication
-    }
-
-    return app
-  }
-
-  // Find app by id
-  static async findById(id: string): Promise<SoketiApp | null> {
-    const result = await sql`
-      SELECT * FROM apps WHERE id = ${id}
-    `
-
-    if (result.length === 0) {
-      return null
-    }
-
-    const app: SoketiApp = {
-      id: result[0].id,
-      key: result[0].key,
-      secret: result[0].secret,
-      max_connections: result[0].max_connections,
-      enable_client_messages: result[0].enable_client_messages,
-      enabled: result[0].enabled,
-      max_backend_events_per_sec: result[0].max_backend_events_per_sec,
-      max_client_events_per_sec: result[0].max_client_events_per_sec,
-      max_read_req_per_sec: result[0].max_read_req_per_sec,
-      max_presence_members_per_channel: result[0].max_presence_members_per_channel,
-      max_presence_member_size_in_kb: result[0].max_presence_member_size_in_kb,
-      max_channel_name_length: result[0].max_channel_name_length,
-      max_event_channels_at_once: result[0].max_event_channels_at_once,
-      max_event_name_length: result[0].max_event_name_length,
-      max_event_payload_in_kb: result[0].max_event_payload_in_kb,
-      max_event_batch_size: result[0].max_event_batch_size,
-      webhooks: result[0].webhooks,
-      enable_user_authentication: result[0].enable_user_authentication
-    }
-
-    return app
-  }
-
-  // Check if app id already exists
-  static async idExists(id: string): Promise<boolean> {
-    const result = await sql`
-      SELECT 1 FROM apps WHERE id = ${id}
-    `
-
-    return result.length > 0
+/**
+ * Extrae un mensaje legible desde un error de tipo unknown.
+ */
+function extractErrorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message
+  try {
+    return String(err)
+  } catch {
+    return 'Unknown error'
   }
 }
+
+export class SoketiAppRepository {
+  /**
+   * Inserta una nueva app en la tabla `apps`.
+   * Retorna la fila insertada como `SoketiApp`.
+   *
+   * Nota: MySQL/MariaDB pueden no soportar `RETURNING`, por lo que se realiza
+   * un INSERT seguido de un SELECT para recuperar la fila.
+   */
+  static async createApp(appData: NewSoketiApp): Promise<SoketiApp> {
+    const idForMsg: string = appData.id
+
+    try {
+      // Ejecutar el INSERT; no dependemos del valor devuelto por la inserción.
+      await db.insert(apps).values(appData)
+    } catch (err: unknown) {
+      throw new Error(`Error inserting Soketi app (id=${idForMsg}): ${extractErrorMessage(err)}`)
+    }
+
+    try {
+      // Realizar SELECT que devuelve un array de filas; tomar la primera.
+      const rows: SoketiApp[] = await db.select().from(apps).where(eq(apps.id, appData.id))
+      if (rows.length === 0) {
+        throw new Error('No se pudo recuperar la app insertada después del INSERT')
+      }
+      return rows[0]
+    } catch (err: unknown) {
+      throw new Error(`Error fetching Soketi app after insert (id=${idForMsg}): ${extractErrorMessage(err)}`)
+    }
+  }
+
+  /**
+   * Busca una app por su id.
+   * Retorna `SoketiApp` o `null` si no existe.
+   */
+  static async findById(id: string): Promise<SoketiApp | null> {
+    try {
+      const rows: SoketiApp[] = await db.select().from(apps).where(eq(apps.id, id))
+      return rows.length > 0 ? rows[0] : null
+    } catch (err: unknown) {
+      throw new Error(`Error querying Soketi app by id=${id}: ${extractErrorMessage(err)}`)
+    }
+  }
+
+  /**
+   * Verifica si existe una app con el id dado.
+   */
+  static async idExists(id: string): Promise<boolean> {
+    try {
+      const rows: { id: string }[] = await db.select({ id: apps.id }).from(apps).where(eq(apps.id, id))
+      return rows.length > 0
+    } catch (err: unknown) {
+      throw new Error(`Error checking existence of Soketi app id=${id}: ${extractErrorMessage(err)}`)
+    }
+  }
+}
+
+// Re-exportar tipos para compatibilidad con el proyecto.
+export type { SoketiApp, NewSoketiApp }
